@@ -2,13 +2,13 @@
   "name": "pizzaurum-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "src/server.ts",
+  "main": "dist/src/server.js",
   "type": "module",
   "scripts": {
-  "start": "node --loader ts-node/esm src/server.ts",             
-  "build": "tsc -p tsconfig.json",                               
-  "dev": "nodemon --watch '**/*.ts' --exec \"node --loader ts-node/esm\" src/server.ts",
-  "start:prod": "node lib/server.js"                              
+    "start": "node dist/src/server.js",
+    "build": "tsc -p tsconfig.json",
+    "dev": "nodemon --watch '**/*.ts' --exec \"node --loader ts-node/esm\" src/server.ts",
+    "start:dev": "node --loader ts-node/esm src/server.ts"
   },
   "keywords": [],
   "author": "",

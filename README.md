@@ -15,9 +15,10 @@ npm install
 
 Configura il file `.env` (vedi sotto) e avvia:
 ```sh
-npm run dev     # reload in sviluppo
-npm run start   # run TS con ts-node (usa PORT/HOST)
-npm run build   # type-check e build con tsc
+npm run dev       # reload in sviluppo
+npm run build     # type-check e build in dist/
+npm run start     # avvia il build JS (usa PORT/HOST)
+npm run start:dev # avvia direttamente TS con ts-node
 ```
 
 ## Variabili d'ambiente

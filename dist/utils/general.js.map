@@ -1,0 +1,1 @@
+{"version":3,"file":"general.js","sourceRoot":"","sources":["../../utils/general.ts"],"names":[],"mappings":"AAAA,OAAO,MAAM,MAAM,QAAQ,CAAA;AAE3B,MAAM,CAAC,MAAM,EAAE,CAAA;AAEf,MAAM,UAAU,KAAK;IACnB,IAAI,OAAO,CAAC,GAAG,CAAC,QAAQ,KAAK,YAAY,EAAE,CAAC;QAC1C,OAAO,KAAK,CAAA;IACd,CAAC;IACD,OAAO,IAAI,CAAA;AACb,CAAC"}
