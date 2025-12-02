@@ -3,7 +3,7 @@ import { server } from "../../lib/fastify.js";
 import dotenv from "dotenv";
 import { cleanProductName } from "../../utils/sanity.js";
 import { supabaseAdmin } from "../../lib/supabase.js";
-import { httpError, requireField } from "../../utils/errors.js";
+import { httpError, propagateError, requireField } from "../../utils/errors.js";
 import { CURRENCY, type StripeCheckoutSession, type StripePaymentIntent } from "../../utils/types.js";
 import { 
   handleCheckoutSessionCompleted, 
@@ -218,7 +218,7 @@ server.post('/api/stripe/create-checkout', async (req, res) => {
     const session = await stripe.checkout.sessions.create(sessionConfig);
     return { sessionId: session.id, url: session.url };
   } catch (error) {
-    throw httpError(500, 'Error creating checkout session', (error as any)?.message);
+    propagateError(error, 'Error creating checkout session');
   }
 });
 
@@ -346,7 +346,7 @@ server.post('/api/stripe/create-payment-sheet', async (req, res) => {
 
     return response;
   } catch (error) {
-    throw httpError(500, 'Error creating payment sheet', (error as any)?.message);
+    propagateError(error, 'Error creating payment sheet');
   }
 })
 
@@ -377,7 +377,7 @@ server.get('/api/stripe/order-id', async (req, res) => {
       created_at: order.created_at
     }
   } catch (error) {
-    throw httpError(500, 'Error retrieving order ID', (error as any)?.message);
+    propagateError(error, 'Error retrieving order ID');
   }
 })
 
@@ -528,7 +528,7 @@ server.post('/api/stripe/payment-methods', async (req, res) => {
       summary: paymentSummary
     }
   } catch (error) {
-    throw httpError(500, 'Error retrieving payment methods.', (error as any)?.message);
+    propagateError(error, 'Error retrieving payment methods.');
   }
 })
 
@@ -562,7 +562,7 @@ server.post('/api/stripe/hosted-checkout', async (req, res) => {
 
     return { url: session.url, client_secret: session.client_secret };
   } catch (error) {
-    throw httpError(500, 'Error creating hosted checkout session.', (error as any)?.message);
+    propagateError(error, 'Error creating hosted checkout session.');
   }
 })
 
@@ -641,7 +641,7 @@ server.post('/api/stripe/refund', async (req, res) => {
       status: refund.status
     }
   } catch (error) {
-    throw httpError(500, 'Error processing refund.', (error as any)?.message);
+    propagateError(error, 'Error processing refund.');
   }
 })
 
@@ -678,6 +678,6 @@ server.post('/api/stripe/update-net-profit', async (req, res) => {
       paymentIssuer: paymentIssuer
     }
   } catch (error) {
-    throw httpError(500, 'Error updating net profit for order.', (error as any)?.message);
+    propagateError(error, 'Error updating net profit for order.');
   }
 })

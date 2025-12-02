@@ -1,4 +1,4 @@
-import { httpError, requireField } from "../../utils/errors.js";
+import { httpError, propagateError, requireField } from "../../utils/errors.js";
 import { supabaseAdmin } from "../../lib/supabase.js";
 import { server } from "../../lib/fastify.js";
 
@@ -84,7 +84,7 @@ server.post('/api/admin/create-rider', async (req, res) => {
       tempPassword: tempPassword
     }
   } catch (error) {
-    throw httpError(500, 'Unexpected error creating rider:', error)
+    propagateError(error, 'Unexpected error creating rider')
   }
 })
 
@@ -175,7 +175,7 @@ server.post('/api/admin/create-admin', async (req, res) => {
         tempPassword: tempPassword
       }
   } catch (error) {
-    throw httpError(500, 'Unexpected error creating admin:', error)
+    propagateError(error, 'Unexpected error creating admin')
   }
 })
 
@@ -184,7 +184,7 @@ server.post('/api/admin/change-password', async (req, res) => {
     const admin = supabaseAdmin
     const { userId, currentPassword, newPassword } = await req.body as any
     requireField(userId && currentPassword && newPassword, 'userId, currentPassword and newPassword are requested')
-    requireField(newPassword.length < 8, 'Password must be at least 8 characters')
+    requireField(newPassword.length >= 8, 'Password must be at least 8 characters')
 
     const weakPasswords = ['password', '123456', 'qwerty', 'admin', 'user', 'test']
     if (weakPasswords.includes(newPassword.toLowerCase())) throw httpError(400, 'The password is too common, avoid classic patterns and retry.')
@@ -202,6 +202,6 @@ server.post('/api/admin/change-password', async (req, res) => {
       message: 'Password changed successfully'
     }
   } catch (error) {
-    throw httpError(500, 'Unexpected error changing the password:', error)
+    propagateError(error, 'Unexpected error changing the password')
   }
 })

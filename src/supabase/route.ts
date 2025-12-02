@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { server } from "../../lib/fastify.js";
 import { supabaseAdmin } from "../../lib/supabase.js";
-import { httpError, requireField } from "../../utils/errors.js";
+import { httpError, propagateError, requireField } from "../../utils/errors.js";
 
 const getAccessToken = (authorization?: string) => authorization?.replace("Bearer ", "");
 
@@ -54,7 +54,7 @@ server.get('/api/orders', async (req, res) => {
     if (error) throw httpError(500, 'Error fetching orders', error.message);
     return data;
   } catch (error) {
-    throw httpError(500, 'Unknown server error', error);
+    propagateError(error, 'Error fetching orders');
   }
 });
 
@@ -74,7 +74,7 @@ server.get('/api/admin/orders', async (req, res) => {
       message: 'All orders fetched successfully'
     };
   } catch (error) {
-    throw httpError(500, 'Unknown server error', error);
+    propagateError(error, 'Error fetching all orders');
   }
 });
 
@@ -97,7 +97,7 @@ server.get('/api/orders/:id', async (req, res) => {
       message: 'Order fetched successfully'
     };
   } catch (error) {
-    throw httpError(500, 'Unknown server error', error);
+    propagateError(error, 'Error fetching order');
   }
 });
 
@@ -149,6 +149,6 @@ server.post('/api/orders', async (req, res) => {
       message: 'Order created successfully'
     };
   } catch (error) {
-    throw httpError(500, 'Unknown server error', error);
+    propagateError(error, 'Error creating the order');
   }
 });

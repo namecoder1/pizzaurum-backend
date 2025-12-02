@@ -1,4 +1,4 @@
-import { httpError, requireField } from "../../utils/errors.js";
+import { httpError, propagateError, requireField } from "../../utils/errors.js";
 import { server } from "../../lib/fastify.js";
 import { supabaseAdmin } from "../../lib/supabase.js";
 import dotenv from 'dotenv'
@@ -22,8 +22,9 @@ server.post('/api/orders/assign-rider', async (req, res) => {
       .eq('id', orderId)
       .single()
 
-    if (checkError) throw httpError(404, 'Error checking order:', checkError.message)
-    if (!orderCheck) throw httpError(409, 'Order already assigned to another rider')
+    if (checkError) throw httpError(404, 'Error checking order', checkError.message)
+    if (!orderCheck) throw httpError(404, 'Order not found')
+    if (orderCheck.driver_id && orderCheck.driver_id !== riderId) throw httpError(409, 'Order already assigned to another rider')
 
     const { data: updatedOrder, error: updateError } = await admin
       .from('orders')
@@ -41,7 +42,7 @@ server.post('/api/orders/assign-rider', async (req, res) => {
       message: 'Order assigned successfully'
     }
   } catch (error) {
-    throw httpError(500, 'Internal server error:', error)
+    propagateError(error, 'Error assigning rider')
   }
 })
 
@@ -52,7 +53,7 @@ server.post('/api/orders/complete-order', async (req, res) => {
     requireField(orderId && riderId, 'orderId & riderId are required')
 
     const { data: orderCheck, error: checkError } = await admin
-      .from('users')
+      .from('orders')
       .select('id, driver_id, status, stripe_payment_intent_id, net_profit, payment_issuer')
       .eq('id', orderId)
       .single()
@@ -106,7 +107,7 @@ server.post('/api/orders/complete-order', async (req, res) => {
       message: 'Order completed successfully'
     }
   } catch (error) {
-    throw httpError(500, 'Internal server error', error)
+    propagateError(error, 'Error completing order')
   }
 })
 
@@ -232,6 +233,6 @@ server.post('/api/orders/update-status', async (req, res) => {
       newStatus
     }
   } catch (error) {
-    throw httpError(500, 'Error updating order status', error)
+    propagateError(error, 'Error updating order status')
   }
 })

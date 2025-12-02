@@ -19,6 +19,20 @@ server.get('/api/sanity/featured', async (req, res) => {
   return cleanObjectStrings(data);
 })
 
+server.get('/api/sanity/monthly', async (req, res) => {
+  const data = await client.fetch(`
+    *[_type == "pizzaurum" && isMonthlyPizza == true] [0] {
+      'id': _id, 
+      name,
+      description,
+      category,
+      price,
+      'image': image.asset -> url
+    }`)
+
+  return cleanObjectStrings(data)
+})
+
 server.get('/api/sanity/pizzas', async (req, res) => {
   const data = await client.fetch(`
     *[_type == "pizza"] {
@@ -85,7 +99,7 @@ server.get('/api/sanity/product/:id', async (req, res) => {
   if (!id) return res.status(400).send({ error: 'Product ID is required' });
 
   const data = await client.fetch(`
-    *[_id == $id] {
+    *[_id == $id] [0] {
     'id': _id,
     name,
     description,

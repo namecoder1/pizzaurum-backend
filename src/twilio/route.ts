@@ -1,4 +1,4 @@
-import { httpError, requireField } from "../../utils/errors.js";
+import { httpError, propagateError, requireField } from "../../utils/errors.js";
 import { server } from "../../lib/fastify.js";
 import { client } from "../../lib/twilio.js";
 import dotenv from "dotenv";
@@ -21,7 +21,7 @@ server.post('/api/twilio/verify', async (req, res) => {
       sid: verification.sid
     }
   } catch (error) {
-    throw httpError(500, `Failed to send OTP: ${error}`);
+    propagateError(error, 'Failed to send OTP');
   } 
 })
 
@@ -46,7 +46,7 @@ server.put('/api/twilio/verify', async (req, res) => {
       throw httpError(400, 'Invalid OTP code');
     }
   } catch (error) {
-    throw httpError(500, `Failed to verify OTP: ${error}`);
+    propagateError(error, 'Failed to verify OTP');
   }
 })
 
@@ -68,6 +68,6 @@ server.post('/api/twilio/send-message', async (req, res) => {
       sid: twilioMessage.sid
     }
   } catch (error) {
-    throw httpError(500, `Failed to send message: ${error}`);
+    propagateError(error, 'Failed to send message');
   }
 })

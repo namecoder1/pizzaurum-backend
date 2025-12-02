@@ -1,5 +1,5 @@
 import { server } from "../../lib/fastify.js";
-import { requireField, httpError } from "../../utils/errors.js";
+import { requireField, httpError, propagateError } from "../../utils/errors.js";
 
 server.post('/api/notification/send', async (req, res) => {
   try {
@@ -53,6 +53,6 @@ server.post('/api/notification/send', async (req, res) => {
       message: `Notification sent to ${expoPushToken.length} device(s)`
     }
   } catch (error) {
-    throw httpError(500, 'Error sending push notification', error)  
+    propagateError(error, 'Error sending push notification')  
   }
 })

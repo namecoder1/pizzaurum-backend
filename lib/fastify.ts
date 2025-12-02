@@ -1,4 +1,8 @@
 import fastify from 'fastify'
+import dotenv from 'dotenv'
+import fastifyCors from '@fastify/cors'
+
+dotenv.config()
 
 export const server = fastify({
   logger: {
@@ -6,6 +10,10 @@ export const server = fastify({
       target: "@fastify/one-line-logger",
     },
   },
+})
+// Abilita CORS per tutte le origini (puoi restringere l'origine se necessario)
+server.register(fastifyCors, {
+  origin: true,
 })
 
 server.setErrorHandler((err: any, req: any, res: any) => {
@@ -18,7 +26,10 @@ server.setErrorHandler((err: any, req: any, res: any) => {
   res.status(status).send({ message, detail: err.validation || undefined })
 })
 
-server.listen({ port: 8080, host: '127.0.0.1',  }, (err, add) => {
+const port = Number(process.env.PORT || 4040)
+const host = process.env.HOST || '0.0.0.0'
+
+server.listen({ port, host }, (err, add) => {
   if (err) {
     console.error(err)
     process.exit(1)

@@ -26,3 +26,18 @@ export const requireField = (condition: any, message: string, detail?: any): voi
     throw httpError(400, message, detail);
   }
 };
+
+/**
+ * Re-throws existing HTTP errors or wraps unknown errors with a 500 status.
+ * This keeps original status codes from upstream validations intact.
+ * @param error The caught error
+ * @param message Optional message to expose when wrapping unknown errors
+ */
+export const propagateError = (error: unknown, message?: string) => {
+  if ((error as any)?.statusCode) {
+    throw error;
+  }
+
+  const detail = (error as any)?.message ?? error;
+  throw httpError(500, message || 'Internal Server Error', detail);
+};

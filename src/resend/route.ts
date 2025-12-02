@@ -1,5 +1,5 @@
 import { server } from "../../lib/fastify.js";
-import { httpError, requireField } from "../../utils/errors.js";
+import { httpError, propagateError, requireField } from "../../utils/errors.js";
 
 server.post('/api/resend/admin-invite', async (req, res) => {
   try {
@@ -23,7 +23,7 @@ server.post('/api/resend/admin-invite', async (req, res) => {
       }
     }
   } catch (error) {
-    throw httpError(500, 'An error occurred while sending the email');
+    propagateError(error, 'An error occurred while sending the email');
   }
 })
 
@@ -50,7 +50,7 @@ server.post('/api/resend/purchase-email', async (req, res) => {
       }
     }
   } catch (error) {
-    throw httpError(500, 'An error occurred while sending the email');
+    propagateError(error, 'An error occurred while sending the email');
   }
 })
 
@@ -76,7 +76,7 @@ server.post('/api/resend/rider-invite', async (req, res) => {
       }
     }
   } catch (error) {
-    throw httpError(500, 'An error occurred while sending the email');
+    propagateError(error, 'An error occurred while sending the email');
   }
 })
 
@@ -102,6 +102,6 @@ server.post('/api/resend/welcome-email', async (req, res) => {
       }
     }
   } catch (error) {
-    throw httpError(500, 'An error occurred while sending the email');
+    propagateError(error, 'An error occurred while sending the email');
   }
 })
