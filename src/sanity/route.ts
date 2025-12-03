@@ -33,6 +33,18 @@ server.get('/api/sanity/monthly', async (req, res) => {
   return cleanObjectStrings(data)
 })
 
+server.get('/api/sanity/customizations', async (req, res) => {
+  const data = await client.fetch(`
+    *[_type == 'customization'] | order(created_at desc) {
+      'id': _id,
+      category,
+      name,
+      price
+    }`)
+
+  return (cleanObjectStrings(data))
+})
+
 server.get('/api/sanity/pizzas', async (req, res) => {
   const data = await client.fetch(`
     *[_type == "pizza"] {
