@@ -31,26 +31,62 @@ const WEBHOOK_EVENTS = {
   CUSTOMER_SUBSCRIPTION_DELETED: "customer.subscription.deleted",
 } as const;
 
-const webhookSecret = process.env.NODE_ENV === 'production' 
+const appEnv = process.env.APP_ENV || process.env.NODE_ENV;
+const isProdLike = appEnv === 'production' || appEnv === 'preview';
+const webhookSecret = isProdLike
   ? process.env.STRIPE_WEBHOOK_SECRET!
   : process.env.STRIPE_WEBHOOK_SECRET_TEST!;
+
+// Parser JSON personalizzato: per il webhook Stripe manteniamo il buffer grezzo
+const parseJsonBuffer = (buffer: Buffer) => JSON.parse(buffer.toString('utf8'));
+const webhookParser = (req: any, body: Buffer, done: any) => {
+  if (req.url?.startsWith('/api/stripe/webhook')) {
+    req.rawBody = body;
+    return done(null, body); // lascia buffer per il webhook Stripe
+  }
+  try {
+    return done(null, parseJsonBuffer(body));
+  } catch (err) {
+    return done(err);
+  }
+};
+
+server.addContentTypeParser('application/json', { parseAs: 'buffer' }, webhookParser);
+server.addContentTypeParser('application/json; charset=utf-8', { parseAs: 'buffer' }, webhookParser);
 
 server.post('/api/stripe/webhook', async (req, res) => {
   let event: any
   const body: any = await req.body;
   const signature = await req.headers['stripe-signature'];
 
+  console.log('[Stripe][Webhook] Incoming webhook', {
+    signaturePresent: Boolean(signature),
+    contentType: req.headers['content-type'],
+    url: req.url
+  });
+
   if (!signature) throw httpError(400, 'Missing Stripe signature header');
+  const rawBody = (req as any).rawBody || body;
 
   try {
     event = stripe.webhooks.constructEvent(
-      body,
+      rawBody,
       signature,
       webhookSecret
     );
   } catch (parseErr: any) {
+    console.error('[Stripe][Webhook] Error constructing event', {
+      error: parseErr?.message,
+      url: req.url
+    });
     throw httpError(400, `Webhook Error: ${parseErr.message}`);
   }
+
+  console.log('[Stripe][Webhook] Event constructed', {
+    type: event?.type,
+    id: event?.id,
+    object: event?.data?.object?.object
+  });
 
   switch (event.type) {
     case WEBHOOK_EVENTS.CHECKOUT_SESSION_COMPLETED:
@@ -84,6 +120,8 @@ server.post('/api/stripe/webhook', async (req, res) => {
     default:
       console.log(`⚠️  Unhandled event type: ${event.type}`, true);
   }
+
+  res.status(200).send({ received: true });
 });
 
 server.post('/api/stripe/create-checkout', async (req, res) => {
@@ -99,6 +137,17 @@ server.post('/api/stripe/create-checkout', async (req, res) => {
       is_custom_time,
       stripe_customer_id
     } = body;
+
+    console.log('[Stripe][CreateCheckout] Request body', {
+      user_id,
+      user_email_present: Boolean(user_email),
+      items_count: items?.length,
+      totalPrice,
+      is_delivery,
+      is_custom_time,
+      customer_time,
+      stripe_customer_id
+    });
 
     requireField(items && Array.isArray(items) && items.length > 0, 'No items provided for checkout.');
     requireField(typeof totalPrice === 'number' && totalPrice > 0, 'Invalid total price.');
@@ -216,8 +265,19 @@ server.post('/api/stripe/create-checkout', async (req, res) => {
     }
   
     const session = await stripe.checkout.sessions.create(sessionConfig);
+    console.log('[Stripe][CreateCheckout] Checkout session created', {
+      session_id: session.id,
+      url_present: Boolean(session.url),
+      stripe_customer_id: session.customer,
+      payment_intent: session.payment_intent,
+      metadata: session.metadata
+    });
     return { sessionId: session.id, url: session.url };
   } catch (error) {
+    console.error('[Stripe][CreateCheckout] Error creating checkout session', {
+      error: (error as any)?.message || error,
+      stack: (error as any)?.stack
+    });
     propagateError(error, 'Error creating checkout session');
   }
 });
@@ -232,6 +292,15 @@ server.post('/api/stripe/create-payment-sheet', async (req, res) => {
       user_email, 
       stripe_customer_id 
     } = await req.body as any
+
+    console.log('[Stripe][CreatePaymentSheet] Request body', {
+      amount,
+      metadata_keys: metadata ? Object.keys(metadata) : [],
+      cart_items_count: cartItems?.length,
+      user_id,
+      user_email_present: Boolean(user_email),
+      stripe_customer_id
+    });
 
     requireField(typeof amount === 'number' && amount > 0, 'Amount is required to create payment sheet.');
     requireField(user_id, 'User ID is required to create payment sheet.');
@@ -344,8 +413,18 @@ server.post('/api/stripe/create-payment-sheet', async (req, res) => {
       stripe_customer_id: customer.id
     }
 
+    console.log('[Stripe][CreatePaymentSheet] Payment intent created', {
+      payment_intent: paymentIntent.id,
+      stripe_customer_id: customer.id,
+      metadata: paymentIntent.metadata
+    });
+
     return response;
   } catch (error) {
+    console.error('[Stripe][CreatePaymentSheet] Error creating payment sheet', {
+      error: (error as any)?.message || error,
+      stack: (error as any)?.stack
+    });
     propagateError(error, 'Error creating payment sheet');
   }
 })
@@ -364,7 +443,7 @@ server.get('/api/stripe/order-id', async (req, res) => {
     const { data: order, error } = await admin
       .from('orders')
       .select('id, status, price, created_at')
-      .eq('stripe_payment_intent', session.payment_intent as string)
+      .or(`stripe_payment_intent_id.eq.${session.payment_intent as string},stripe_payment_intent.eq.${session.payment_intent as string}`)
       .single();
 
     if (error) throw httpError(500, 'Error retrieving order', error.message);

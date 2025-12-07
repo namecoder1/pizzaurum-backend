@@ -2,6 +2,33 @@ import { stripe } from "../lib/stripe.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import type { StripeCheckoutSession, StripePaymentIntent } from "./types.js";
 
+const PURCHASE_EMAIL_ENDPOINT = process.env.EMAIL_SERVICE_URL || 'https://email.pizzaurum.store/api/send/purchase-email';
+
+async function sendPurchaseEmail(params: { orderId: string; email?: string | null; name?: string | null; }) {
+  const { orderId, email, name } = params;
+  if (!email) return false;
+
+  const firstName = name?.split(" ")[0] || email.split("@")[0] || "Cliente";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(PURCHASE_EMAIL_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, orderId, email }),
+      signal: controller.signal
+    });
+
+    return response.ok;
+  } catch (error) {
+    console.log(`Error sending purchase email for order ${orderId}: ${error}`, true);
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Format amount for Stripe
 export function formatAmountForStripe(amount: number, currency?: string) {
   // Default to EUR if no currency is provided
@@ -30,6 +57,7 @@ export async function getStripeFeesAndPaymentMethod(paymentIntentId: string): Pr
   netAmount: number; 
   paymentIssuer: string;
 }> {
+  console.log('[Stripe][Fees] Fetching fees and payment method', { paymentIntentId });
   try {
     const charges = await stripe.charges.list({
       payment_intent: paymentIntentId,
@@ -111,6 +139,13 @@ export async function getStripeFeesAndPaymentMethod(paymentIntentId: string): Pr
 
 export async function handleCheckoutSessionCompleted(session: StripeCheckoutSession) {
   try {
+    console.log('[Stripe][Webhook] Handling checkout.session.completed', {
+      session_id: session.id,
+      payment_intent: session.payment_intent,
+      invoice: session.invoice,
+      metadata: session.metadata
+    });
+
     const admin = await supabaseAdmin;
     const { data: existingOrder, error: existingError } = await admin
       .from('orders')
@@ -118,9 +153,20 @@ export async function handleCheckoutSessionCompleted(session: StripeCheckoutSess
       .eq('stripe_session_id', session.id)
       .single();
 
-    if (existingError && existingError.code !== 'PGRST116') return new Error(`Error checking existing order: ${existingError.message}`);
-    if (existingOrder) return new Error('Order already exists');
-    if (!session.metadata?.user_id) return new Error('No user_id in session metadata');
+    if (existingError && existingError.code !== 'PGRST116') {
+      console.error('[Stripe][Webhook] Error checking existing order', { error: existingError });
+      return new Error(`Error checking existing order: ${existingError.message}`);
+    }
+
+    if (existingOrder) {
+      console.log('[Stripe][Webhook] Order already exists for session', { session_id: session.id });
+      return new Error('Order already exists');
+    }
+
+    if (!session.metadata?.user_id) {
+      console.error('[Stripe][Webhook] Missing user_id in session metadata', { session_id: session.id, metadata: session.metadata });
+      return new Error('No user_id in session metadata');
+    }
 
     const { data: userData, error: userError } = await admin
       .from('users')
@@ -128,7 +174,10 @@ export async function handleCheckoutSessionCompleted(session: StripeCheckoutSess
       .eq('id', session?.metadata?.user_id)
       .single();
 
-    if (userError) return new Error(`User not found: ${userError.message}`);
+    if (userError) {
+      console.error('[Stripe][Webhook] User not found for session', { session_id: session.id, user_id: session?.metadata?.user_id, error: userError });
+      return new Error(`User not found: ${userError.message}`);
+    }
 
     const totalAmount = session.amount_total / 100;
     const estimatedFee = (totalAmount * 0.029) + 0.3; 
@@ -154,7 +203,7 @@ export async function handleCheckoutSessionCompleted(session: StripeCheckoutSess
       }
 
       products = productEntries.map((entry, index) => {
-        const [productId, quantity, extrasCount] = entry.split('|');
+        const [productId, quantity] = entry.split(':');
         const extras = extrasMap.get(index) || [];
 
         return {
@@ -206,7 +255,29 @@ export async function handleCheckoutSessionCompleted(session: StripeCheckoutSess
       .select('id')
       .single();
 
-    if (insertError) return new Error(`Error inserting order: ${insertError.message}`);
+    if (insertError) {
+      console.error('[Stripe][Webhook] Error inserting order for checkout session', { session_id: session.id, error: insertError });
+      return new Error(`Error inserting order: ${insertError.message}`);
+    }
+
+    if (insertedOrder?.id) {
+      const emailSent = await sendPurchaseEmail({
+        orderId: insertedOrder.id,
+        email: userData?.email,
+        name: (userData as any)?.name
+      });
+
+      if (emailSent) {
+        try {
+          await admin
+            .from('orders')
+            .update({ is_email_sent: true })
+            .eq('id', insertedOrder.id);
+        } catch (emailUpdateError) {
+          console.log(`Error updating email flag for order ${insertedOrder.id}: ${emailUpdateError}`, true);
+        }
+      }
+    }
 
     try {
       const { data: userProfile, error: infoUserError } = await admin
@@ -227,12 +298,23 @@ export async function handleCheckoutSessionCompleted(session: StripeCheckoutSess
 
     if (insertedOrder.id) console.log('Order created successfully')
   } catch (error) {
+    console.error('[Stripe][Webhook] Error processing checkout session completed', {
+      error: (error as any)?.message || error,
+      stack: (error as any)?.stack
+    });
     return new Error('Error processing checkout session completed');
   }
 }
 
 export async function handlePaymentIntentSucceeded(paymentIntent: StripePaymentIntent) {
   try {
+    console.log('[Stripe][Webhook] Handling payment_intent.succeeded', {
+      payment_intent: paymentIntent.id,
+      amount: paymentIntent.amount,
+      user_id: paymentIntent.metadata?.user_id,
+      metadata: paymentIntent.metadata
+    });
+
     const admin = await supabaseAdmin;
     const { data: existingOrder } = await admin
       .from('orders')
@@ -240,9 +322,15 @@ export async function handlePaymentIntentSucceeded(paymentIntent: StripePaymentI
       .eq('stripe_payment_intent_id', paymentIntent.id)
       .single();
 
-    if (existingOrder) return new Error('Order already exists');
+    if (existingOrder) {
+      console.log('[Stripe][Webhook] Order already exists for payment intent', { payment_intent: paymentIntent.id, order_id: existingOrder.id });
+      return new Error('Order already exists');
+    }
 
-    if (!paymentIntent.metadata?.user_id) return new Error('No user_id in payment intent metadata');
+    if (!paymentIntent.metadata?.user_id) {
+      console.error('[Stripe][Webhook] Missing user_id in payment intent metadata', { payment_intent: paymentIntent.id, metadata: paymentIntent.metadata });
+      return new Error('No user_id in payment intent metadata');
+    }
 
     // Create basic products array
     let products = [];
@@ -324,16 +412,58 @@ export async function handlePaymentIntentSucceeded(paymentIntent: StripePaymentI
       .select("id")
       .single();
 
-    if (insertError) return new Error(`Error inserting order: ${insertError.message}`);
+    if (insertError) {
+      console.error('[Stripe][Webhook] Error inserting order for payment intent', { payment_intent: paymentIntent.id, error: insertError });
+      return new Error(`Error inserting order: ${insertError.message}`);
+    }
+
+    if (insertedOrder?.id) {
+      const { data: userData, error: userError } = await admin
+        .from('users')
+        .select('name, email')
+        .eq('id', paymentIntent.metadata?.user_id)
+        .single();
+
+      if (!userError) {
+        const emailSent = await sendPurchaseEmail({
+          orderId: insertedOrder.id,
+          email: userData?.email,
+          name: userData?.name as any
+        });
+
+        if (emailSent) {
+          try {
+            await admin
+              .from('orders')
+              .update({ is_email_sent: true })
+              .eq('id', insertedOrder.id);
+          } catch (emailUpdateError) {
+            console.log(`Error updating email flag for order ${insertedOrder.id}: ${emailUpdateError}`, true);
+          }
+        }
+      }
+    }
 
     console.log(`Order processed successfully for payment intent: ${paymentIntent.id}`);
   } catch (error) {
+    console.error('[Stripe][Webhook] Error processing payment intent succeeded', {
+      payment_intent: paymentIntent.id,
+      error: (error as any)?.message || error,
+      stack: (error as any)?.stack
+    });
     return new Error('Error processing payment intent succeeded');
   }
 }
 
 export async function handlePaymentIntentFailed(paymentIntent: StripePaymentIntent) {
   try {
+    console.log('[Stripe][Webhook] Handling payment_intent.payment_failed', {
+      payment_intent: paymentIntent.id,
+      amount: paymentIntent.amount,
+      user_id: paymentIntent.metadata?.user_id,
+      metadata: paymentIntent.metadata
+    });
+
     const admin = await supabaseAdmin;
 
     // Create basic products array
@@ -411,10 +541,18 @@ export async function handlePaymentIntentFailed(paymentIntent: StripePaymentInte
       .from("orders")
       .insert(orderData);
 
-    if (insertError) return new Error(`Error inserting failed order: ${insertError.message}`);
+    if (insertError) {
+      console.error('[Stripe][Webhook] Error inserting failed order', { payment_intent: paymentIntent.id, error: insertError });
+      return new Error(`Error inserting failed order: ${insertError.message}`);
+    }
 
     console.log('Order marked as failed due to payment intent failure');
   } catch (error) {
+    console.error('[Stripe][Webhook] Error processing payment intent failed', {
+      payment_intent: paymentIntent.id,
+      error: (error as any)?.message || error,
+      stack: (error as any)?.stack
+    });
     return new Error('Error processing payment intent failed');
   }
 }
