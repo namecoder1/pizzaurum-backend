@@ -1,6 +1,7 @@
 {
   "name": "pizzaurum-backend",
   "version": "1.0.0",
+  "packageManager": "pnpm@12.18.0",
   "description": "",
   "main": "dist/src/server.js",
   "type": "module",
